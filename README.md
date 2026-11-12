@@ -8,7 +8,7 @@ Nine tabs cover overview, a tappable North Indian D1 chart and placement table, 
 
 Inspired by K. N. Rao's emphasis on research across many charts, verification against dated events, Parashari and Jaimini together, confirmation in two dashas, Desha-Kala-Patra, accurate birth records and ethical consultation. Independent educational software; no endorsement is claimed and no book text is reproduced. Never frighten a client, predict death, diagnose illness, or sell remedies or gemstones. Astrology is presented as a traditional interpretive framework, not a scientifically established predictor. Health, wealth and relationship sections preserve agency and do not replace qualified professional advice.
 
-Lessons cover the Rao approach; house groups; grahas; signs and dignity; the four-step house checklist; nakshatras; strength, combustion and retrogression; aspects; yogas; Vimshottari; Jaimini; vargas; transits; and an eight-step reading workflow. Each has 250–450 words and a chart-specific exercise. D9 is calculated; D10 and D60 are taught rather than displayed.
+Lessons cover the Rao approach; house groups; grahas; signs and dignity; the four-step house checklist; nakshatras; strength, combustion and retrogression; aspects; yogas; Vimshottari; Jaimini; vargas; transits; and an eight-step reading workflow. Each has 250–450 words and a chart-specific exercise. D1, D9 and D10 are drawn in the same North Indian style on the Kundali tab; D60 is taught rather than displayed.
 
 ## Install the APK
 
@@ -55,4 +55,13 @@ The acceptance test checks 15 Aug 1947, 00:00 IST, Delhi: Taurus Lagna and Rahu;
 
 ## Roadmap
 
-Future improvements: independently benchmark the complete supported date range against a professional ephemeris; refine near-station motion and boundary warnings; add opt-in encrypted local chart storage, richer accessibility for the chart, advanced Chara variants, D10, localization and device instrumentation coverage. The current v1 is fully usable without those additions.
+Future improvements: independently benchmark the complete supported date range against a professional ephemeris; refine near-station motion and boundary warnings; add opt-in encrypted local chart storage, richer accessibility for the chart, advanced Chara variants, localization and device instrumentation coverage. The current v1 is fully usable without those additions.
+
+
+## Career charts, verification worksheet and text export
+
+The Kundali tab has adjacent D1/D9/D10 selectors. Each divisional chart calculates its own Lagna, sign numbers, occupants and whole-sign houses, including in the accessible placement table and tapped-house explanation. D1 shows natal degrees; D9/D10 show sign placements rather than fabricated divisional degrees. D10 (Dashamsha) divides each natal sign into ten half-open 3° portions: odd-numbered signs start from themselves, even-numbered signs from the ninth, advancing zodiacally. D10 Lagna is birth-time sensitive. The career explainer starts from D1's tenth house/lord, seeks D10 support and dated-event confirmation in both dashas, and preserves Rao-inspired research and ethical cautions. Vargottama planets have a labeled badge on the Planets tab when D1 and D9 signs match.
+
+The Dasha tab's **Past events check** accepts exactly three event descriptions and ISO dates (YYYY-MM-DD), from birth through today. It displays Vimshottari MD/AD, introductory Chara and the period lords' natal house ownership, occupation and dispositor connections. Date-only events use local noon in the birth-place time zone, clamped to the birth instant on the birth date. Same-day MD/AD/Chara changes are flagged with their local transition times: an exact event time may be needed. The implemented Chara table is one twelve-sign cycle; dates beyond it explicitly say unavailable, without inventing advanced or repeated-cycle rules. This worksheet teaches verification, including contradictions and misses, rather than claiming predictive proof or rectifying birth time from three events. Entries remain in Android saved UI state for the chart, with no database or network calls.
+
+**Share text** opens Android's plain-text share chooser. **Save .txt** uses Android's document picker to write a UTF-8 summary to a user-selected destination without broad storage permissions. The summary includes personal birth details, D1/D9/D10 placements, Vargottama labels, current periods and accuracy conventions; worksheet events are excluded. Choose a local folder to save offline. Receiving apps and document providers control any later upload; Astro itself has no network permission.

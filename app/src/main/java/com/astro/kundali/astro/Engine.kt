@@ -83,6 +83,12 @@ data class Position(
     val d9
         get() = navamsa(longitude)
 
+    val d10
+        get() = dashamsha(longitude)
+
+    val vargottama
+        get() = sign == d9
+
     val dignity: String
         get() {
             val exalt =
