@@ -302,6 +302,10 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
 private fun Results(c: Chart, onBack: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(0) }
     var lesson by rememberSaveable { mutableStateOf(-1) }
+    var division by rememberSaveable { mutableStateOf(1) }
+    var eventEntries by rememberSaveable { mutableStateOf(List(6) { "" }) }
+    var checkedEvents by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var eventError by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler { if (lesson >= 0) lesson = -1 else onBack() }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         Row(
@@ -313,6 +317,7 @@ private fun Results(c: Chart, onBack: () -> Unit) {
             }
             Text("ASTRO", Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
         }
+        if (lesson < 0) ExportActions(c)
         if (lesson >= 0) {
             Column(
                 Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
@@ -351,17 +356,32 @@ private fun Results(c: Chart, onBack: () -> Unit) {
                             TextCard("Read with care", accuracy)
                         }
                         1 -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(1, 9, 10).forEach { d ->
+                                    FilterChip(
+                                        selected = division == d,
+                                        onClick = { division = d },
+                                        label = { Text("D$d") },
+                                    )
+                                }
+                            }
                             Text(
-                                "North Indian • D1",
+                                "North Indian • D$division",
                                 style = MaterialTheme.typography.headlineSmall,
                             )
                             Text(
-                                "Fixed houses; numbers denote signs. Tap a house to inspect its reasoning."
+                                "Fixed houses counted from this chart's Lagna; numbers denote signs. Tap a house for its connections. Divisional charts show sign placements, not invented degrees."
                             )
-                            NorthChart(c)
-                            PlacementTable(c)
+                            if (division == 10) TextCard("Career study with D10", d10Guide)
+                            if (division == 9)
+                                TextCard(
+                                    "Navamsa • D9",
+                                    "Read D9 alongside D1 for supporting testimony, strength and partnerships. Vargottama means the same sign in D1 and D9; it does not guarantee an outcome.",
+                                )
+                            NorthChart(c, division)
+                            PlacementTable(c, division)
                         }
-                        2 -> c.positions.forEach { TextCard(it.name, planetReading(c, it)) }
+                        2 -> c.positions.forEach { PlanetCard(c, it) }
                         3 ->
                             (1..12).forEach {
                                 TextCard("$it · ${houseTitles[it-1]}", houseReading(c, it))
@@ -386,6 +406,47 @@ private fun Results(c: Chart, onBack: () -> Unit) {
                             }
                         }
                         6 -> {
+                            EventWorksheet(
+                                c,
+                                eventEntries,
+                                checkedEvents,
+                                eventError,
+                                onEdit = { index, value ->
+                                    eventEntries =
+                                        eventEntries.toMutableList().also { it[index] = value }
+                                    checkedEvents = emptyList()
+                                    eventError = null
+                                },
+                                onCheck = {
+                                    runCatching {
+                                            (0..2).forEach { i ->
+                                                require(eventEntries[i * 2 + 1].isNotBlank()) {
+                                                    "Describe event ${i+1}."
+                                                }
+                                                val date =
+                                                    runCatching {
+                                                            LocalDate.parse(
+                                                                eventEntries[i * 2].trim()
+                                                            )
+                                                        }
+                                                        .getOrElse {
+                                                            throw IllegalArgumentException(
+                                                                "Event ${i+1}: use YYYY-MM-DD."
+                                                            )
+                                                        }
+                                                checkEvent(c, date)
+                                            }
+                                        }
+                                        .onSuccess {
+                                            checkedEvents = eventEntries.toList()
+                                            eventError = null
+                                        }
+                                        .onFailure {
+                                            eventError = it.message
+                                            checkedEvents = emptyList()
+                                        }
+                                },
+                            )
                             TextCard(
                                 "Vimshottari",
                                 "Periods use 365.25-day years. The first major period begins before birth; only its remaining balance is lived after birth. Judge natural meaning → owned houses → occupied house → associations → strength. Dates below are UTC; current periods are marked ●.",
@@ -458,16 +519,17 @@ private val centers =
     )
 
 @Composable
-private fun NorthChart(c: Chart) {
-    var selected by remember { mutableStateOf(1) }
+private fun NorthChart(c: Chart, division: Int) {
+    val view = c.varga(division)
+    var selected by remember(division) { mutableStateOf(1) }
     Canvas(
         Modifier.fillMaxWidth()
             .aspectRatio(1f)
             .semantics {
                 contentDescription =
-                    "North Indian birth chart; twelve houses, accessible house table follows"
+                    "North Indian D$division chart; twelve houses, accessible placement table follows"
             }
-            .pointerInput(Unit) {
+            .pointerInput(division) {
                 detectTapGestures { tap ->
                     selected =
                         centers.indices.minBy {
@@ -502,8 +564,11 @@ private fun NorthChart(c: Chart) {
         centers.forEachIndexed { i, p ->
             val hno = i + 1
             val list =
-                listOf("${c.signOfHouse(hno)+1}${if(hno==1)" As" else ""}") +
-                    c.occupants(hno).map { "${it.name.take(2)} ${it.degree.fmt()}°" }
+                listOf("${view.signOfHouse(hno)+1}${if(hno==1)" As" else ""}") +
+                    view.occupants(hno).map { p ->
+                        if (division == 1) "${p.name.take(2)} ${c.p(p.name).degree.fmt()}°"
+                        else p.name.take(2)
+                    }
             list.forEachIndexed { j, s ->
                 drawContext.canvas.nativeCanvas.drawText(
                     s,
@@ -514,28 +579,33 @@ private fun NorthChart(c: Chart) {
             }
         }
     }
-    TextCard("House $selected • ${houseTitles[selected-1]}", houseReading(c, selected))
+    TextCard(
+        "D$division house $selected • ${houseTitles[selected-1]}",
+        vargaHouseReading(c, division, selected),
+    )
 }
 
 @Composable
-private fun PlacementTable(c: Chart) {
+private fun PlacementTable(c: Chart, division: Int) {
+    val view = c.varga(division)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth()) {
                 Text("Graha", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
                 Text(
-                    "Sign / degree",
+                    if (division == 1) "Sign / degree" else "D$division sign",
                     Modifier.weight(1.5f),
                     style = MaterialTheme.typography.labelMedium,
                 )
                 Text("House", Modifier.weight(.6f), style = MaterialTheme.typography.labelMedium)
             }
             HorizontalDivider()
-            c.positions.forEach { p ->
+            view.positions.forEach { p ->
                 Row(Modifier.fillMaxWidth()) {
                     Text(p.name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     Text(
-                        "${signs[p.sign]} ${p.degree.fmt()}°",
+                        if (division == 1) "${signs[p.sign]} ${c.p(p.name).degree.fmt()}°"
+                        else signs[p.sign],
                         Modifier.weight(1.5f),
                         style = MaterialTheme.typography.bodySmall,
                     )
