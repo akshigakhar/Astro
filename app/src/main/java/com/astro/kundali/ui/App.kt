@@ -2,10 +2,8 @@ package com.astro.kundali.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.graphics.Paint
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -13,19 +11,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.astro.kundali.astro.*
 import com.astro.kundali.astro.Period
 import com.astro.kundali.content.*
+import com.astro.kundali.data.LessonProgressStore
 import java.time.*
-import kotlin.math.pow
 
 private val tabs =
     listOf(
@@ -300,6 +293,9 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
 
 @Composable
 private fun Results(c: Chart, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val progressStore = remember(context) { LessonProgressStore(context) }
+    var lessonScores by remember { mutableStateOf(progressStore.load()) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var lesson by rememberSaveable { mutableStateOf(-1) }
     var division by rememberSaveable { mutableStateOf(1) }
@@ -319,13 +315,19 @@ private fun Results(c: Chart, onBack: () -> Unit) {
         }
         if (lesson < 0) ExportActions(c)
         if (lesson >= 0) {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                Text(lessons[lesson].title, style = MaterialTheme.typography.headlineMedium)
-                Text(lessons[lesson].text)
-                TextCard("Practice with your own chart", exercise(c, lessons[lesson]))
+            key(lesson) {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Text(lessons[lesson].title, style = MaterialTheme.typography.headlineMedium)
+                    LessonMiniChart(c, lesson)
+                    Text(lessons[lesson].text)
+                    TextCard("Practice with your own chart", exercise(c, lessons[lesson]))
+                    LessonQuiz(c, lesson, lessonScores[lessonKey(lesson)]) { score ->
+                        lessonScores = progressStore.record(lesson, score)
+                    }
+                }
             }
         } else {
             ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
@@ -478,14 +480,20 @@ private fun Results(c: Chart, onBack: () -> Unit) {
                         8 -> {
                             TextCard(
                                 "Learn by checking",
-                                "Fourteen original lessons inspired by Rao's research, synthesis and ethics. This app is independent and does not claim his endorsement. Each lesson ends with an exercise on your chart.",
+                                "Fourteen original lessons inspired by Rao's research, synthesis and ethics. This app is independent and does not claim his endorsement. Each lesson has a focused mini chart, an exercise and a five-question quiz with feedback.",
                             )
+                            LearningProgress(lessonScores)
                             lessons.forEachIndexed { i, l ->
                                 OutlinedButton(
                                     onClick = { lesson = i },
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text(l.title)
+                                    Text(
+                                        l.title +
+                                            (lessonScores[lessonKey(i)]?.let {
+                                                " • Completed • best $it/5"
+                                            } ?: " • Not completed")
+                                    )
                                 }
                             }
                             glossary.forEach { (a, b) -> Expand(a, b) }
@@ -501,84 +509,17 @@ private fun Results(c: Chart, onBack: () -> Unit) {
 private fun periodDates(p: Period, earliest: Instant = p.start) =
     "${maxOf(p.start, earliest).atZone(ZoneOffset.UTC).toLocalDate()} → ${p.end.atZone(ZoneOffset.UTC).toLocalDate()}"
 
-// House centers follow the fixed North Indian layout, counter-clockwise from top.
-private val centers =
-    listOf(
-        .5f to .25f,
-        .25f to .10f,
-        .10f to .25f,
-        .25f to .5f,
-        .10f to .75f,
-        .25f to .90f,
-        .5f to .75f,
-        .75f to .90f,
-        .90f to .75f,
-        .75f to .5f,
-        .90f to .25f,
-        .75f to .10f,
-    )
-
 @Composable
 private fun NorthChart(c: Chart, division: Int) {
     val view = c.varga(division)
     var selected by remember(division) { mutableStateOf(1) }
-    Canvas(
-        Modifier.fillMaxWidth()
-            .aspectRatio(1f)
-            .semantics {
-                contentDescription =
-                    "North Indian D$division chart; twelve houses, accessible placement table follows"
-            }
-            .pointerInput(division) {
-                detectTapGestures { tap ->
-                    selected =
-                        centers.indices.minBy {
-                            val p = centers[it]
-                            (tap.x / size.width - p.first).pow(2) +
-                                (tap.y / size.height - p.second).pow(2)
-                        } + 1
-                }
-            }
-    ) {
-        val w = size.width
-        val h = size.height
-        val ink = Color(0xFF9C7A40)
-        fun line(a: Float, b: Float, x: Float, y: Float) =
-            drawLine(ink, Offset(a * w, b * h), Offset(x * w, y * h), 2f)
-        line(0f, 0f, 1f, 0f)
-        line(1f, 0f, 1f, 1f)
-        line(1f, 1f, 0f, 1f)
-        line(0f, 1f, 0f, 0f)
-        line(0f, 0f, 1f, 1f)
-        line(1f, 0f, 0f, 1f)
-        line(.5f, 0f, 1f, .5f)
-        line(1f, .5f, .5f, 1f)
-        line(.5f, 1f, 0f, .5f)
-        line(0f, .5f, .5f, 0f)
-        val paint =
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.rgb(26, 64, 76)
-                textAlign = Paint.Align.CENTER
-                textSize = w * .028f
-            }
-        centers.forEachIndexed { i, p ->
-            val hno = i + 1
-            val list =
-                listOf("${view.signOfHouse(hno)+1}${if(hno==1)" As" else ""}") +
-                    view.occupants(hno).map { p ->
-                        if (division == 1) "${p.name.take(2)} ${c.p(p.name).degree.fmt()}°"
-                        else p.name.take(2)
-                    }
-            list.forEachIndexed { j, s ->
-                drawContext.canvas.nativeCanvas.drawText(
-                    s,
-                    p.first * w,
-                    p.second * h + (j - (list.size - 1) / 2f) * w * .032f,
-                    paint,
-                )
-            }
-        }
-    }
+    NorthIndianDiagram(
+        view,
+        label = { name ->
+            if (division == 1) "${name.take(2)} ${c.p(name).degree.fmt()}°" else name.take(2)
+        },
+        onHouseClick = { selected = it },
+    )
     TextCard(
         "D$division house $selected • ${houseTitles[selected-1]}",
         vargaHouseReading(c, division, selected),
