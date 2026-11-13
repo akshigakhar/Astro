@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.astro.kundali.ui
 
 import android.app.DatePickerDialog
@@ -5,6 +7,7 @@ import android.app.TimePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,7 +16,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.astro.kundali.astro.*
 import com.astro.kundali.astro.Period
 import com.astro.kundali.content.*
@@ -73,7 +80,16 @@ fun AstroApp() {
                     },
                 )
             var chart by rememberSaveable(stateSaver = chartSaver) { mutableStateOf<Chart?>(null) }
-            if (chart == null) BirthScreen { chart = it } else Results(chart!!) { chart = null }
+            var about by rememberSaveable { mutableStateOf(false) }
+            if (chart == null) BirthScreen(onAbout = { about = true }) { chart = it }
+            else Results(chart!!, onAbout = { about = true }) { chart = null }
+            if (about)
+                Dialog(
+                    onDismissRequest = { about = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
+                ) {
+                    AboutScreen { about = false }
+                }
         }
     }
 }
@@ -85,6 +101,7 @@ private fun TextCard(title: String, body: String, modifier: Modifier = Modifier)
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(body, style = MaterialTheme.typography.bodyMedium)
@@ -97,7 +114,15 @@ private fun Expand(title: String, body: String, highlight: Boolean = false) {
     var open by rememberSaveable(title) { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            TextButton(onClick = { open = !open }) {
+            TextButton(
+                onClick = { open = !open },
+                modifier =
+                    Modifier.semantics {
+                        stateDescription =
+                            (if (open) "Expanded" else "Collapsed") +
+                                if (highlight) ", current period" else ""
+                    },
+            ) {
                 Text("${if(highlight)"● " else ""}$title ${if(open)"−" else "+"}")
             }
             if (open) Text(body)
@@ -106,7 +131,7 @@ private fun Expand(title: String, body: String, highlight: Boolean = false) {
 }
 
 @Composable
-private fun BirthScreen(onChart: (Chart) -> Unit) {
+private fun BirthScreen(onAbout: () -> Unit, onChart: (Chart) -> Unit) {
     val context = LocalContext.current
     var name by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf("2000-01-01") }
@@ -123,6 +148,9 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        TextButton(onClick = onAbout, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("About / Accuracy & Privacy")
+        }
         Text(
             "ASTRO",
             style = MaterialTheme.typography.labelLarge,
@@ -140,7 +168,7 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
                     val d = LocalDate.parse(date)
@@ -184,9 +212,13 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
             "Birth-time accuracy matters: a few minutes can change Lagna and divisional charts.",
             style = MaterialTheme.typography.bodySmall,
         )
-        Row {
-            Checkbox(custom, { custom = it })
-            Text("Enter a custom place", Modifier.padding(top = 12.dp))
+        Row(
+            Modifier.fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .toggleable(value = custom, role = Role.Checkbox, onValueChange = { custom = it })
+        ) {
+            Checkbox(custom, null)
+            Text("Enter a custom place", Modifier.weight(1f).padding(top = 12.dp))
         }
         if (custom) {
             OutlinedTextField(
@@ -292,10 +324,12 @@ private fun BirthScreen(onChart: (Chart) -> Unit) {
 }
 
 @Composable
-private fun Results(c: Chart, onBack: () -> Unit) {
+private fun Results(c: Chart, onAbout: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val progressStore = remember(context) { LessonProgressStore(context) }
     var lessonScores by remember { mutableStateOf(progressStore.load()) }
+    val largeText = LocalDensity.current.fontScale >= 1.3f
+    var sectionMenu by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var lesson by rememberSaveable { mutableStateOf(-1) }
     var division by rememberSaveable { mutableStateOf(1) }
@@ -304,7 +338,7 @@ private fun Results(c: Chart, onBack: () -> Unit) {
     var eventError by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler { if (lesson >= 0) lesson = -1 else onBack() }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        Row(
+        FlowRow(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -313,13 +347,13 @@ private fun Results(c: Chart, onBack: () -> Unit) {
             }
             Text("ASTRO", Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
         }
-        if (lesson < 0) ExportActions(c)
         if (lesson >= 0) {
             key(lesson) {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
+                    TextButton(onClick = onAbout) { Text("About / Accuracy & Privacy") }
                     Text(lessons[lesson].title, style = MaterialTheme.typography.headlineMedium)
                     LessonMiniChart(c, lesson)
                     Text(lessons[lesson].text)
@@ -330,14 +364,40 @@ private fun Results(c: Chart, onBack: () -> Unit) {
                 }
             }
         } else {
-            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
-                tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
-            }
+            if (!largeText)
+                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+                    tabs.forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
+                }
             key(tab) {
                 Column(
                     Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    if (largeText)
+                        Box {
+                            OutlinedButton(
+                                onClick = { sectionMenu = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Section: ${tabs[tab]} • Choose")
+                            }
+                            DropdownMenu(
+                                expanded = sectionMenu,
+                                onDismissRequest = { sectionMenu = false },
+                            ) {
+                                tabs.forEachIndexed { i, title ->
+                                    DropdownMenuItem(
+                                        text = { Text(title) },
+                                        onClick = {
+                                            tab = i
+                                            sectionMenu = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    TextButton(onClick = onAbout) { Text("About / Accuracy & Privacy") }
+                    ExportActions(c)
                     when (tab) {
                         0 -> {
                             Text(
@@ -358,7 +418,7 @@ private fun Results(c: Chart, onBack: () -> Unit) {
                             TextCard("Read with care", accuracy)
                         }
                         1 -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(1, 9, 10).forEach { d ->
                                     FilterChip(
                                         selected = division == d,
@@ -520,6 +580,23 @@ private fun NorthChart(c: Chart, division: Int) {
         },
         onHouseClick = { selected = it },
     )
+    var houseMenu by remember(division) { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { houseMenu = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("Choose house • $selected (${signs[view.signOfHouse(selected)]})")
+        }
+        DropdownMenu(expanded = houseMenu, onDismissRequest = { houseMenu = false }) {
+            (1..12).forEach { house ->
+                DropdownMenuItem(
+                    text = { Text("House $house • ${signs[view.signOfHouse(house)]}") },
+                    onClick = {
+                        selected = house
+                        houseMenu = false
+                    },
+                )
+            }
+        }
+    }
     TextCard(
         "D$division house $selected • ${houseTitles[selected-1]}",
         vargaHouseReading(c, division, selected),
@@ -529,6 +606,17 @@ private fun NorthChart(c: Chart, division: Int) {
 @Composable
 private fun PlacementTable(c: Chart, division: Int) {
     val view = c.varga(division)
+    if (LocalDensity.current.fontScale >= 1.3f) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            view.positions.forEach { p ->
+                TextCard(
+                    p.name,
+                    "D$division ${signs[p.sign]}${if(division==1) " ${c.p(p.name).degree.fmt()}°" else ""} • House ${p.house}",
+                )
+            }
+        }
+        return
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth()) {

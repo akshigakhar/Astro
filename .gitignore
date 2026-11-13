@@ -13,3 +13,11 @@ captures/
 *.hprof
 *.jks
 *.keystore
+keystore.properties
+signing.properties
+.env
+.env.*
+*.p12
+*.pfx
+__pycache__/
+*.pyc

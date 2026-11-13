@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.astro.kundali.ui
 
 import android.content.Intent
@@ -115,7 +117,7 @@ internal fun ExportActions(c: Chart) {
             pendingText = ""
         }
     Column(Modifier.padding(horizontal = 16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
                     val send =

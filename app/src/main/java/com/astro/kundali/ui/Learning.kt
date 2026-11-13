@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import com.astro.kundali.astro.*
 import com.astro.kundali.content.*
@@ -102,6 +103,7 @@ internal fun LessonQuiz(c: Chart, index: Int, best: Int?, onCompleted: (Int) -> 
                             if (correct) "Correct"
                             else "Not quite. Correct answer: ${q.choices[q.answer]}",
                             style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                             color =
                                 if (correct) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.error,
