@@ -1,4 +1,4 @@
-"""Guard the documented on-device/no-network defaults at the Android package boundary."""
+"""Guard the documented optional-cloud/private-cache defaults at the Android package boundary."""
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
@@ -9,11 +9,14 @@ DOMAINS = {'root', 'file', 'database', 'sharedpref', 'external', 'device_root', 
 
 
 class PrivacyManifestTest(unittest.TestCase):
-    def test_app_has_no_network_or_broad_storage_permission_and_disables_backup(self):
+    def test_app_declares_optional_cloud_network_only_and_disables_backup(self):
         manifest = ET.parse(ROOT / 'AndroidManifest.xml').getroot()
-        forbidden = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE', 'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.MANAGE_EXTERNAL_STORAGE'}
+        forbidden = { 'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.MANAGE_EXTERNAL_STORAGE'}
         requested = {p.attrib.get(ANDROID + 'name') for p in manifest.findall('uses-permission')}
         self.assertFalse(requested & forbidden)
+        self.assertTrue({'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE'} <= requested)
+        provider = next(p for p in manifest.find('application').findall('provider') if p.attrib.get(ANDROID + 'name') == 'com.google.firebase.provider.FirebaseInitProvider')
+        self.assertEqual('remove', provider.attrib['{http://schemas.android.com/tools}node'])
         app = manifest.find('application')
         self.assertEqual('false', app.attrib[ANDROID + 'allowBackup'])
         self.assertEqual('@xml/backup_rules', app.attrib[ANDROID + 'fullBackupContent'])

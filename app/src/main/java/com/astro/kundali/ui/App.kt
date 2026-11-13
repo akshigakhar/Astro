@@ -11,7 +11,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,8 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.astro.kundali.astro.*
 import com.astro.kundali.astro.Period
 import com.astro.kundali.content.*
@@ -49,49 +46,7 @@ fun AstroApp() {
             background = Color(0xFFF7F5EF),
             surface = Color(0xFFFFFCF5),
         )
-    MaterialTheme(colorScheme = colors) {
-        Surface(Modifier.fillMaxSize()) {
-            val chartSaver =
-                Saver<Chart?, List<String>>(
-                    save = { value ->
-                        value?.birth?.let { b ->
-                            listOf(
-                                b.name,
-                                b.date.toString(),
-                                b.time.toString(),
-                                b.place.name,
-                                b.place.lat.toString(),
-                                b.place.lon.toString(),
-                                b.place.zone,
-                            )
-                        } ?: emptyList()
-                    },
-                    restore = { a ->
-                        if (a.isEmpty()) null
-                        else
-                            Engine.calculate(
-                                Birth(
-                                    a[0],
-                                    LocalDate.parse(a[1]),
-                                    LocalTime.parse(a[2]),
-                                    Place(a[3], a[4].toDouble(), a[5].toDouble(), a[6]),
-                                )
-                            )
-                    },
-                )
-            var chart by rememberSaveable(stateSaver = chartSaver) { mutableStateOf<Chart?>(null) }
-            var about by rememberSaveable { mutableStateOf(false) }
-            if (chart == null) BirthScreen(onAbout = { about = true }) { chart = it }
-            else Results(chart!!, onAbout = { about = true }) { chart = null }
-            if (about)
-                Dialog(
-                    onDismissRequest = { about = false },
-                    properties = DialogProperties(usePlatformDefaultWidth = false),
-                ) {
-                    AboutScreen { about = false }
-                }
-        }
-    }
+    MaterialTheme(colorScheme = colors) { Surface(Modifier.fillMaxSize()) { AccountWorkspace() } }
 }
 
 @Composable
@@ -131,7 +86,11 @@ private fun Expand(title: String, body: String, highlight: Boolean = false) {
 }
 
 @Composable
-private fun BirthScreen(onAbout: () -> Unit, onChart: (Chart) -> Unit) {
+internal fun BirthScreen(
+    onAbout: () -> Unit,
+    onAccounts: () -> Unit = {},
+    onChart: (Chart) -> Unit,
+) {
     val context = LocalContext.current
     var name by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf("2000-01-01") }
@@ -148,6 +107,7 @@ private fun BirthScreen(onAbout: () -> Unit, onChart: (Chart) -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        TextButton(onClick = onAccounts) { Text("Account / My Kundalis") }
         TextButton(onClick = onAbout, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("About / Accuracy & Privacy")
         }
@@ -317,14 +277,23 @@ private fun BirthScreen(onAbout: () -> Unit, onChart: (Chart) -> Unit) {
         }
         TextCard(
             "Offline, private, thoughtful",
-            "No account, ads, network permissions or paid remedies. Your birth details stay in this session. This is an educational tool, not medical, financial or legal advice.",
+            "Guest calculation and lessons stay offline. Optional accounts upload only the birth details you choose to save; the owner/admin can view saved data. No analytics, ads or paid remedies. This is an educational tool, not medical, financial or legal advice.",
         )
         Text(accuracy, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun Results(c: Chart, onAbout: () -> Unit, onBack: () -> Unit) {
+internal fun Results(
+    c: Chart,
+    onAbout: () -> Unit,
+    onAccounts: () -> Unit = {},
+    readOnly: Boolean = false,
+    saveLabel: String = "Save Kundali",
+    saveMessage: String? = null,
+    onSave: () -> Unit = {},
+    onBack: () -> Unit,
+) {
     val context = LocalContext.current
     val progressStore = remember(context) { LessonProgressStore(context) }
     var lessonScores by remember { mutableStateOf(progressStore.load()) }
@@ -397,7 +366,16 @@ private fun Results(c: Chart, onAbout: () -> Unit, onBack: () -> Unit) {
                             }
                         }
                     TextButton(onClick = onAbout) { Text("About / Accuracy & Privacy") }
-                    ExportActions(c)
+                    TextButton(onClick = onAccounts) { Text("Account / My Kundalis") }
+                    if (readOnly)
+                        Text("Read-only admin support view. Saving and export are disabled.")
+                    else {
+                        Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
+                            Text(saveLabel)
+                        }
+                        saveMessage?.let { Text(it) }
+                        ExportActions(c)
+                    }
                     when (tab) {
                         0 -> {
                             Text(
