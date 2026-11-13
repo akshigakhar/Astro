@@ -73,3 +73,64 @@ Every lesson now includes **Chart of the lesson**, a mini D1 North Indian chart 
 Each of the fourteen lessons ends in five multiple-choice questions. Where appropriate they are generated from the current birth chart: house lords and their locations, signs, nakshatra/pada, dasha lords, aspects, dignity, karakas, D9/D10 and Vargottama. Concept questions reinforce technique and ethics. Choices are deterministic for a given lesson/chart, each first choice is final for that attempt, and feedback immediately gives the correct answer and explanation. Restart/Retake clears the attempt, allowing practice without erasing a better saved score.
 
 Answering all five questions completes a lesson regardless of score. The lesson list shows completion, best score and an overall progress bar. SharedPreferences (`learning_progress_v1`, stable `lesson-1` … `lesson-14` keys) stores only completed-quiz best scores, globally across birth charts and app restarts. Birth details, questions and selected answers are not stored there. In-progress answers use Android saved UI state for recreation. There is no account, network call or sync, and application backup remains disabled. Clearing app data or uninstalling clears learning progress. The tests verify all 70 generated questions on different charts, independent sample answers, aspect counting, scoring, immutable best-score updates and chart-focus validity.
+
+## Signed release builds (no committed credentials)
+
+Use JDK 17 and the SDK setup above. A release build is non-debuggable and requires an explicit signing configuration; it never falls back to the debug key or silently emits an unsigned release. Debug builds/tests require no release credentials. Create and securely back up your own long-lived keystore outside the checkout (Android Studio's Generate Signed APK wizard or JDK `keytool` can do this). Keep the same signing identity for future updates. Losing it can prevent upgrades. The disposable keys used by CI are only for smoke testing and must never sign a distributed release.
+
+Gradle reads these settings, with a nonblank environment value taking precedence over ignored root `local.properties`:
+
+| Environment variable | `local.properties` key | Value |
+| --- | --- | --- |
+| `ASTRO_KEYSTORE_PATH` | `astro.keystorePath` | Absolute path, or path relative to repository root |
+| `ASTRO_KEYSTORE_PASSWORD` | `astro.keystorePassword` | Keystore password |
+| `ASTRO_KEY_ALIAS` | `astro.keyAlias` | Signing alias |
+| `ASTRO_KEY_PASSWORD` | `astro.keyPassword` | Key password |
+| `ASTRO_VERSION_NAME` | `astro.versionName` | Version name; default `1.0.0` |
+| `ASTRO_VERSION_CODE` | `astro.versionCode` | Positive Android version code; default `1` |
+
+Supply passwords through your local secret manager/environment or enter them into your private `local.properties`; do not paste them into commands recorded in shell history, logs, issues or Git. Java properties require escaping backslashes and line breaks; environment variables are preferable for values containing special characters. All four signing settings are required. `local.properties`, keystores, signing-properties files and `.env` files are ignored, but always review `git status` before committing. Never commit a real key, password or base64-encoded keystore.
+
+For example, this command prompts for passwords rather than embedding them in shell history (choose a secure path outside the checkout):
+
+```sh
+keytool -genkeypair -keystore /secure/path/astro-release.jks -storetype JKS -alias astro -keyalg RSA -keysize 3072 -validity 10000
+```
+
+After configuring the four signing settings:
+
+```sh
+./gradlew testDebugUnitTest assembleRelease
+# Signed output: app/build/outputs/apk/release/app-release.apk
+# Verify it with Android SDK build-tools/34.0.0/apksigner verify --verbose <apk>
+```
+
+The version code must increase for upgrades. Tag-based releases derive it automatically as `major * 1000000 + minor * 1000 + patch`; each component is 0–999, with no leading zeros, and `v0.0.0` is rejected. Supported release tags are exactly `vMAJOR.MINOR.PATCH` (for example `v1.2.3` gives name `1.2.3`, code `1002003`); prerelease suffixes are not supported in this workflow. Manual builds must choose a compatible, increasing code. A release signed with your key cannot replace an installed debug-signed build with the same package ID: uninstall the debug build first, which clears app-private data.
+
+## GitHub Releases on version tags
+
+In repository **Settings → Secrets and variables → Actions**, configure these repository secrets before pushing a release tag:
+
+- `ASTRO_KEYSTORE_BASE64`: the single-line base64 representation of your production keystore file (encode locally; the encoded value is also a secret).
+- `ASTRO_KEYSTORE_PASSWORD`, `ASTRO_KEY_ALIAS`, `ASTRO_KEY_PASSWORD`: matching signing credentials.
+
+The workflow is `.github/workflows/release.yml`. After merging this setup and validating the intended commit, create and push an intentional version tag. Pushing `v*` starts the workflow; invalid version formats fail before decoding credentials. Only push a release tag when you intend to publish that commit.
+
+For example, after choosing an unused version and the intended commit:
+
+```sh
+git tag -a v1.2.3 -m "Astro 1.2.3"
+git push origin v1.2.3
+```
+
+The build job uses JDK 17, runs tests, decodes the key into a temporary owner-only file, builds the signed release, verifies the APK signature, and prepares `astro-<version>.apk` plus its `.sha256` checksum. Signing material is removed in an always-run cleanup step and is never uploaded. A separate publish job has `contents: write` permission and attaches those files to a GitHub Release for the existing tag. It uses the built-in `GITHUB_TOKEN`, so no personal access token or app API key is required. An existing GitHub Release is not overwritten; choose a new version/tag for a new published binary. Releases are public if the repository is public. Adding this workflow does not publish a release; publication starts only when a supported tag is pushed.
+
+PR CI also runs the tag/version unit tests and `.github/scripts/signing_smoke.py`. The latter tests missing-credential rejection and both environment/local-properties signing with a generated disposable key, verifies each APK, restores any existing `local.properties` and deletes the key. That smoke-test release APK is not uploaded; `astro-debug-apk` remains the installable test artifact. To run the smoke check locally, set `JAVA_HOME` to JDK 17 and `ANDROID_HOME` to your SDK, then run `python .github/scripts/signing_smoke.py`.
+
+## Accuracy, privacy and accessibility
+
+**About / Accuracy & Privacy** is available before birth entry and from chart results. It explains low-precision calculations, the educational nature of astrology, medical/financial/legal advice limits, on-device state and score storage, no analytics or telemetry, disabled backups and explicit cloud/device-transfer exclusion rules, deliberate sharing/export exceptions, and how to clear local data. Astro itself has no network or broad storage permission. A chosen sharing app or cloud document provider may transfer a summary; exported files and shared copies must be removed separately.
+
+The shared North Indian chart has a spoken D1/D9/D10 description containing Lagna, all twelve house signs, full occupant names and lesson highlights. Interactive charts expose twelve screen-reader house actions and a text **Choose house** menu. Text placement cards replace the narrow table at larger system font sizes. Charts grow with system text size and pan horizontally; the containing screen scrolls vertically. Buttons/controls wrap instead of forcing crowded horizontal rows; large-text mode uses a scroll-content section picker instead of fixed-height tabs; expandable sections announce expanded/current state and quiz feedback is a polite live region. About headings are marked for screen-reader navigation.
+
+Device review checklist: use Android's largest font size and display size on a narrow portrait screen; check birth date/time controls, the About dialog, all chart selectors/house menus, text placements, sharing controls, lessons and quizzes for clipping. With TalkBack, navigate About headings, read a chart description, invoke a house action or the house menu, and confirm quiz feedback is announced. Text/semantics generation and builds are tested in CI; TalkBack and visual large-font behavior still require device/emulator verification.
