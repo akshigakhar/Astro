@@ -1,0 +1,13 @@
+{
+  "name": "astro-firestore-rules-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test rules.test.cjs",
+    "emulator": "firebase emulators:exec --only firestore --project demo-astro-kundali --config ../firebase.json 'npm test'"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "3.0.3",
+    "firebase": "10.14.1",
+    "firebase-tools": "13.22.0"
+  }
+}

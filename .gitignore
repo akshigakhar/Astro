@@ -21,3 +21,11 @@ signing.properties
 *.pfx
 __pycache__/
 *.pyc
+google-services.json
+*service-account*.json
+firebase-admin-credentials*.json
+node_modules/
+.firebase/
+firestore-debug.log
+ui-debug.log
+firebase-debug.log

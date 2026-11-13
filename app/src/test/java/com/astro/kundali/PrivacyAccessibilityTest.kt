@@ -41,9 +41,9 @@ class PrivacyAccessibilityTest {
     fun privacyExplainsLocalStorageExportExceptionsAndAdviceLimits() {
         val text = aboutSections.values.joinToString(" ")
         listOf(
-                "no account",
+                "Firebase Auth",
                 "analytics",
-                "network permission",
+                "network access",
                 "SharedPreferences",
                 "Clear storage",
                 "medical",
@@ -51,6 +51,8 @@ class PrivacyAccessibilityTest {
                 "educational",
                 "subsequent transfer",
                 "backup is disabled",
+                "owner/admin",
+                "birth details only",
             )
             .forEach { assertTrue(it, text.contains(it, ignoreCase = true)) }
         assertTrue(text.contains(accuracy))

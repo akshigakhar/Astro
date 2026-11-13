@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function adminClaim() { return request.auth != null && request.auth.token.get('admin', false) == true; }
+    function google() { return request.auth != null && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'google.com'; }
+    function admin() {
+      return adminClaim() && google() && exists(/databases/$(database)/documents/config/admin)
+        && get(/databases/$(database)/documents/config/admin).data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/config/admin).data.get('disabled', false) == false;
+    }
+    function authenticated() { return request.auth != null && (!adminClaim() || admin()); }
+    function own(uid) { return authenticated() && request.auth.uid == uid; }
+    function profileShape(d) {
+      return d.keys().hasAll(['email','displayName','kundaliCount','createdAt','lastKundaliId','lastOperation','lastAuditId'])
+        && d.keys().hasOnly(['email','displayName','kundaliCount','createdAt','lastKundaliId','lastOperation','lastAuditId'])
+        && d.email is string && d.email.size() <= 320 && d.displayName is string && d.displayName.size() <= 120
+        && d.kundaliCount is int && d.kundaliCount >= 0 && d.kundaliCount <= 1000000000
+        && d.createdAt is timestamp && d.lastKundaliId is string && d.lastKundaliId.size() <= 128
+        && d.lastOperation in ['', 'create', 'delete', 'erase'] && d.lastAuditId is string && d.lastAuditId.size() <= 128;
+    }
+    function birthShape(d) {
+      return d.keys().hasAll(['personName','birthDate','birthTime','placeName','country','latitude','longitude','timeZoneId','createdAt','updatedAt'])
+        && d.keys().hasOnly(['personName','birthDate','birthTime','placeName','country','latitude','longitude','timeZoneId','createdAt','updatedAt'])
+        && d.personName is string && d.personName.size() > 0 && d.personName.size() <= 120
+        && d.birthDate is string && d.birthDate.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
+        && d.birthTime is string && d.birthTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && d.placeName is string && d.placeName.size() > 0 && d.placeName.size() <= 120
+        && d.country is string && d.country.size() > 0 && d.country.size() <= 80
+        && d.latitude is number && d.latitude >= -89.9 && d.latitude <= 89.9
+        && d.longitude is number && d.longitude >= -180 && d.longitude <= 180
+        && d.timeZoneId is string && d.timeZoneId.size() > 0 && d.timeZoneId.size() <= 80
+        && d.createdAt is timestamp && d.updatedAt is timestamp;
+    }
+    function auditShape(d) {
+      return d.keys().hasAll(['adminUid','action','targetUid','kundaliId','timestamp'])
+        && d.keys().hasOnly(['adminUid','action','targetUid','kundaliId','timestamp'])
+        && d.adminUid == request.auth.uid && d.action in ['delete_kundali','delete_user_data']
+        && d.targetUid is string && d.targetUid.size() > 0 && d.targetUid.size() <= 128
+        && d.kundaliId is string && d.kundaliId.size() <= 128 && d.timestamp == request.time;
+    }
+    function freshAudit(id, uid, kid, action) {
+      let path = /databases/$(database)/documents/adminAudit/$(id);
+      let d = getAfter(path).data;
+      return id.size() > 0 && !exists(path) && auditShape(d)
+        && d.targetUid == uid && d.kundaliId == kid && d.action == action;
+    }
+    function deletionMarker(uid) {
+      let d = get(/databases/$(database)/documents/adminAudit/$(resource.data.lastAuditId)).data;
+      return resource.data.lastOperation == 'erase' && resource.data.lastAuditId.size() > 0
+        && d.adminUid == request.auth.uid && d.targetUid == uid && d.action == 'delete_user_data'
+        && d.kundaliId == '' && d.timestamp >= resource.data.createdAt;
+    }
+    match /config/admin {
+      allow get: if adminClaim() && google();
+      // One-way self-revocation after account data has been purged. No client can enable access or change owner UID.
+      allow update: if admin() && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disabled'])
+        && request.resource.data.disabled == true;
+      allow list, create, delete: if false;
+    }
+    match /users/{uid} {
+      allow get: if own(uid) || admin();
+      allow list: if admin();
+      allow create: if own(uid) && profileShape(request.resource.data)
+        && request.resource.data.email == request.auth.token.get('email', '')
+        && request.resource.data.createdAt == request.time && request.resource.data.kundaliCount == 0
+        && request.resource.data.lastKundaliId == '' && request.resource.data.lastOperation == '' && request.resource.data.lastAuditId == '';
+      allow update: if profileShape(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          (own(uid) && request.resource.data.kundaliCount == resource.data.kundaliCount
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email','displayName'])
+            && request.resource.data.email == request.auth.token.get('email', ''))
+          || createCounter(uid) || deleteCounter(uid)
+          || (admin() && resource.data.kundaliCount == 0 && request.resource.data.kundaliCount == 0
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastOperation','lastKundaliId','lastAuditId'])
+            && request.resource.data.lastOperation == 'erase' && request.resource.data.lastKundaliId == ''
+            && freshAudit(request.resource.data.lastAuditId,uid,'','delete_user_data'))
+        );
+      function stableProfile() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kundaliCount','lastKundaliId','lastOperation','lastAuditId']);
+      }
+      function createCounter(uid) {
+        let kid = request.resource.data.lastKundaliId;
+        let path = /databases/$(database)/documents/users/$(uid)/kundalis/$(kid);
+        return own(uid) && stableProfile() && kid.size() > 0 && request.resource.data.lastOperation == 'create'
+          && request.resource.data.lastAuditId == '' && request.resource.data.kundaliCount == resource.data.kundaliCount + 1
+          && (admin() || resource.data.kundaliCount < 2)
+          && !exists(path) && existsAfter(path);
+      }
+      function deleteCounter(uid) {
+        let kid = request.resource.data.lastKundaliId;
+        let path = /databases/$(database)/documents/users/$(uid)/kundalis/$(kid);
+        return (own(uid) || admin()) && stableProfile() && kid.size() > 0 && request.resource.data.lastOperation == 'delete'
+          && resource.data.kundaliCount > 0 && request.resource.data.kundaliCount == resource.data.kundaliCount - 1
+          && exists(path) && !existsAfter(path)
+          && (admin() ? freshAudit(request.resource.data.lastAuditId,uid,kid,'delete_kundali') : request.resource.data.lastAuditId == '');
+      }
+      allow delete: if resource.data.kundaliCount == 0 && (admin() ? deletionMarker(uid) : own(uid));
+      match /kundalis/{kid} {
+        allow read: if own(uid) || admin();
+        function countedCreate() {
+          let before = get(/databases/$(database)/documents/users/$(uid)).data;
+          let after = getAfter(/databases/$(database)/documents/users/$(uid)).data;
+          return after.kundaliCount == before.kundaliCount + 1 && after.lastKundaliId == kid
+            && after.lastOperation == 'create' && (admin() || before.kundaliCount < 2);
+        }
+        function countedDelete() {
+          let before = get(/databases/$(database)/documents/users/$(uid)).data;
+          let after = getAfter(/databases/$(database)/documents/users/$(uid)).data;
+          return before.kundaliCount > 0 && after.kundaliCount == before.kundaliCount - 1
+            && after.lastKundaliId == kid && after.lastOperation == 'delete'
+            && (admin() ? freshAudit(after.lastAuditId,uid,kid,'delete_kundali') : after.lastAuditId == '');
+        }
+        allow create: if own(uid) && birthShape(request.resource.data)
+          && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time && countedCreate();
+        allow update: if own(uid) && birthShape(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.updatedAt == request.time;
+        allow delete: if (own(uid) || admin()) && countedDelete();
+      }
+    }
+    match /{path=**}/kundalis/{kid} { allow read: if admin(); }
+    match /adminAudit/{id} {
+      allow read: if admin();
+      allow create: if admin() && auditShape(request.resource.data);
+      allow update, delete: if false;
+    }
+  }
+}

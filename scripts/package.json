@@ -1,0 +1,8 @@
+{
+  "name": "astro-owner-setup",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase-admin": "12.6.0"
+  }
+}

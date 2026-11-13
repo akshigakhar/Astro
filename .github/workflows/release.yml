@@ -29,6 +29,23 @@ jobs:
         run: |
           python -m unittest discover -s .github/scripts -p 'test_*.py'
           python .github/scripts/release_metadata.py
+      - name: Configure Firebase for production release
+        env:
+          ASTRO_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ASTRO_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          python - <<'PYCONFIG'
+          import base64, json, os
+          from pathlib import Path
+          value = os.environ.get('ASTRO_GOOGLE_SERVICES_JSON_BASE64', '')
+          if not value:
+              raise SystemExit('Configure ASTRO_GOOGLE_SERVICES_JSON_BASE64 before releasing account-enabled builds. Debug CI supports guest-only fallback.')
+          try:
+              data = base64.b64decode(value, validate=True)
+              json.loads(data)
+          except (ValueError, UnicodeDecodeError):
+              raise SystemExit('Firebase configuration secret must contain a base64-encoded google-services.json.')
+          Path('app/google-services.json').write_bytes(data)
+          PYCONFIG
       - name: Decode signing keystore
         env:
           ASTRO_KEYSTORE_BASE64: ${{ secrets.ASTRO_KEYSTORE_BASE64 }}
@@ -72,7 +89,7 @@ jobs:
           retention-days: 7
       - name: Remove temporary signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/astro-release.jks"
+        run: rm -f "$RUNNER_TEMP/astro-release.jks" app/google-services.json
   publish:
     needs: build
     runs-on: ubuntu-latest
