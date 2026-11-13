@@ -17,6 +17,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.asTask
 import kotlinx.coroutines.tasks.await
 
 class AccountViewModel(app: Application) : AndroidViewModel(app) {
@@ -203,10 +204,30 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    // Counter/getAfter rules can reject a stale concurrent snapshot as PERMISSION_DENIED
+    // before the SDK reports an ABORTED conflict. Retry from a fresh snapshot, never relax rules.
+    private fun <T> countedTransaction(work: (Transaction) -> T) =
+        scope
+            .async {
+                repeat(4) { attempt ->
+                    try {
+                        return@async database().runTransaction { tx -> work(tx) }.await()
+                    } catch (error: FirebaseFirestoreException) {
+                        if (
+                            error.code != FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+                                attempt == 3
+                        )
+                            throw error
+                        delay(80L * (attempt + 1))
+                    }
+                }
+                error("Transaction retry exhausted.")
+            }
+            .asTask()
+
     private suspend fun ensureProfile(user: FirebaseUser) {
         val ref = database().document("users/${user.uid}")
-        database()
-            .runTransaction { tx ->
+        countedTransaction { tx ->
                 val current = tx.get(ref)
                 if (!current.exists())
                     tx.set(
@@ -317,8 +338,7 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
         val current = requireSession()
         val parent = database().document("users/${current.uid}")
         val child = parent.collection("kundalis").document()
-        database()
-            .runTransaction { tx ->
+        countedTransaction { tx ->
                 val profile = tx.get(parent)
                 check(profile.exists()) { "Refresh account sync before saving." }
                 val next =
@@ -352,8 +372,7 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
         birth.toBirth()
         check(requireSession().uid == saved.uid) { "Other users' charts are read-only." }
         val ref = database().document("users/${saved.uid}/kundalis/${saved.id}")
-        database()
-            .runTransaction { tx ->
+        countedTransaction { tx ->
                 check(tx.get(ref).exists()) { "This saved chart was deleted. Refresh the list." }
                 tx.update(ref, birth.fields() + mapOf("updatedAt" to FieldValue.serverTimestamp()))
             }
@@ -366,8 +385,7 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
         val parent = database().document("users/${saved.uid}")
         val child = parent.collection("kundalis").document(saved.id)
         val audit = if (me.admin) database().collection("adminAudit").document() else null
-        database()
-            .runTransaction { tx ->
+        countedTransaction { tx ->
                 val profile = tx.get(parent)
                 val record = tx.get(child)
                 if (record.exists()) {
@@ -429,8 +447,7 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
         val parent = database().document("users/$uid")
         if (me.admin) {
             val audit = database().collection("adminAudit").document()
-            database()
-                .runTransaction { tx ->
+            countedTransaction { tx ->
                     val profile = tx.get(parent)
                     check((profile.getLong("kundaliCount") ?: 0) == 0L) {
                         "Charts changed during deletion. Refresh and retry."
@@ -449,8 +466,7 @@ class CloudRepository(context: Context, private val scope: CoroutineScope) {
                 }
                 .await()
         }
-        database()
-            .runTransaction { tx ->
+        countedTransaction { tx ->
                 val p = tx.get(parent)
                 if (p.exists()) {
                     check((p.getLong("kundaliCount") ?: 0) == 0L) {

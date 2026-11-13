@@ -58,10 +58,21 @@ async function initProfile(db, uid) {
     lastAuditId: "",
   });
 }
+// Same bounded fresh-snapshot retry as the Android repository. Rules remain the authority.
+async function countedTransaction(db, work) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await runTransaction(db, work);
+    } catch (error) {
+      if (error.code !== "permission-denied" || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 80 * (attempt + 1)));
+    }
+  }
+}
 async function save(db, uid, id) {
   const p = profile(db, uid);
   const k = doc(db, `users/${uid}/kundalis/${id}`);
-  return runTransaction(db, async (tx) => {
+  return countedTransaction(db, async (tx) => {
     const d = (await tx.get(p)).data();
     tx.set(k, birth());
     tx.update(p, {

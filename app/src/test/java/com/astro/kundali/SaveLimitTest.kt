@@ -74,5 +74,9 @@ class SaveLimitTest {
             SavedKundali("user-a", "chart-a", SavedBirth.from(Cities.sample, "India"), 100, 200)
         assertEquals(saved, CachedKundali.from(saved).saved())
         assertNotEquals(CachedKundali.from(saved), CachedKundali.from(saved.copy(uid = "user-b")))
+        val other = saved.copy(uid = "user-b")
+        assertEquals(listOf(saved), visibleSavedKundalis("user-a", listOf(saved, other)))
+        assertEquals(listOf(other), visibleSavedKundalis("user-b", listOf(saved, other)))
+        assertTrue(visibleSavedKundalis(null, listOf(saved, other)).isEmpty())
     }
 }

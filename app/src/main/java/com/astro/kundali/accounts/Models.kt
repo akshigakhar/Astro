@@ -140,3 +140,7 @@ fun defaultCountry(zone: String) =
         "America/Chicago" -> "United States"
         else -> ""
     }
+
+/** UI boundary: StateFlow may briefly retain the previous session's last Room emission. */
+fun visibleSavedKundalis(uid: String?, rows: List<SavedKundali>): List<SavedKundali> =
+    if (uid == null) emptyList() else rows.filter { it.uid == uid }

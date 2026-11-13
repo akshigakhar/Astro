@@ -31,7 +31,8 @@ private const val CLOUD_DISCLOSURE =
 internal fun AccountWorkspace(vm: AccountViewModel = viewModel()) {
     val repo = vm.repository
     val user by repo.session.collectAsState()
-    val rows by repo.saved.collectAsState()
+    val cachedRows by repo.saved.collectAsState()
+    val rows = visibleSavedKundalis(user?.uid, cachedRows)
     val count by repo.count.collectAsState()
     val notice by repo.notice.collectAsState()
     val scope = rememberCoroutineScope()
@@ -115,6 +116,8 @@ internal fun AccountWorkspace(vm: AccountViewModel = viewModel()) {
         }
     }
     when {
+        readOnly && user?.admin != true ->
+            ScreenColumn { Text("Owner/admin access is required for this support chart.") }
         edit != null ->
             BirthEditor(
                 edit!!,
